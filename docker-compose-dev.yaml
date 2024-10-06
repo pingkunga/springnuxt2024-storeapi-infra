@@ -1,0 +1,84 @@
+networks:
+  store_network:
+    name: store_network
+    driver: bridge
+
+services:
+  pgadmin_storedb:
+    image: dpage/pgadmin4
+    container_name: pgadmin_storedb
+    restart: always
+    user: "${UID}:${GID}"
+    ports:
+      - "5051:5050"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: pingkung@samplestore.com
+      PGADMIN_DEFAULT_PASSWORD: P@ssw0rd
+      PGADMIN_LISTEN_PORT: 5050
+    volumes:
+      - ./pgadmin-data:/var/lib/pgadmin
+    networks:
+      - store_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+  pg_storedb:
+    image: postgres:15.8
+    container_name: pg_storedb
+    volumes:
+      - ./postgresdb:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+    environment:
+      POSTGRES_USER: storeusr
+      POSTGRES_PASSWORD: 123456
+      POSTGRES_DB: StoreDB
+    ports:
+      - "6432:5432"
+    restart: always
+    networks:
+      - store_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 30s
+      timeout: 30s
+      retries: 5
+  storeapi:
+    container_name: storeapi
+    build:
+      context: ../store-backend
+      dockerfile: Dockerfile
+    volumes:
+      - ../store-backend:/app
+      - ./appdata:/appdata
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+    ports:
+      - "9091:8081"
+    restart: always
+    depends_on:
+      pg_storedb:
+        condition: service_healthy
+    networks:
+      - store_network
+  # Nuxt.js 
+  storeui:
+    container_name: storeui
+    build:
+      context: ../nuxt-store-app
+      dockerfile: Dockerfile
+    volumes:
+      - ../nuxt-store-app:/app
+      - /app/node_modules # bookmarks volume
+    environment:
+      NODE_ENV: production
+    env_file:
+      - ../nuxt-store-app/.env.local
+    ports:
+      - "3300:3000"
+    depends_on:
+      - storeapi
+    restart: always
+    networks:
+      - store_network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      
